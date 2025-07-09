@@ -13,7 +13,7 @@
 ### ユーザースクリプト
 Google Chrome＋[Tampermonkey](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) や Firefox＋[Violentmonkey](https://addons.mozilla.org/ja/firefox/addon/violentmonkey/) 等のユーザースクリプトが動作可能な環境で、  
 
-> [不正なページ遷移抑制](http://furyutei.github.io/amzSuppressIllegalPageTransition/src/js/amzSuppressIllegalPageTransition.user.js)  
+> [不正なページ遷移抑制](https://furyutei.github.io/amzSuppressIllegalPageTransition/src/js/amzSuppressIllegalPageTransition.user.js)  
                                 
 をクリックし、指示に従ってインストール。  
 
