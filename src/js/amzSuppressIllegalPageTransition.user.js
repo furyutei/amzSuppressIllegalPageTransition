@@ -3,7 +3,7 @@
 // @name:ja         不正なページ遷移抑制
 // @namespace       https://furyutei.com/
 // @license         MIT
-// @version         0.0.1
+// @version         0.0.2
 // @description     Suppress page transitions when pressing the "Add to List" button in preparation
 // @description:ja  準備完了前に[リストに追加]ボタンを押すと不正なページ遷移が発生してしまう不具合を抑制
 // @author          furyu@fuyutei.com
@@ -23,95 +23,165 @@
     
     const SCRIPT_NAME = 'amzSuppressIllegalPageTransition';
     
-    const insert_css = (() => {
-        let css_style_id = 0;
-        return css_rule_text => {
-            const
-                css_style = document.createElement('style'),
-                css_rule = document.createTextNode(css_rule_text);
+    class WishlistController {
+        #script_name = 'user_content_script';
+        #css_style_id = 0;
+        #hide_buttons_css_style = null;
+        
+        constructor(script_name = null) {
+            if (script_name) {
+                this.#script_name = script_name;
+            }
+        }
+        
+        hide_buttons() {
+            this.#insert_hide_buttons_css_style();
+            return this;
+        }
+        
+        show_buttons() {
+            this.#remove_hide_buttons_css_style();
+            return this;
+        }
+        
+        patch_buttons() {
+            // [備忘] [リストに追加]関連ボタンが、もともとtype="submit"になっており、早いタイミングで押すと不正な遷移をしてしまうのはこれが原因
+            // →type="button"に変更することで防止することが可能
+            [... document.querySelectorAll('#add-to-wishlist-button-submit,#add-to-wishlist-button')].forEach(button => {
+                if (button.type == 'submit') {
+                    button.type = 'button';
+                }
+            });
+            return this;
+        }
+        
+        #insert_css(css_rule_text) {
+            const css_style = document.createElement('style');
+            const css_rule = document.createTextNode(css_rule_text);
             
-            css_style.id = `${SCRIPT_NAME}-css-${++css_style_id}`;
+            css_style.id = `${this.script_name}-css-${++ this.#css_style_id}`;
             css_style.type = 'text/css';
             css_style.append(css_rule);
             document.documentElement.append(css_style);
             return css_style;
-        };
-    })();
-    
-    const hide_buttons = () => {
-        insert_css(`
-            #wishlistButtonStack {
-                visibility: hidden;
-            }
-        `);
-    };
-    
-    const show_buttons = () => {
-        [... document.querySelectorAll('#add-to-wishlist-button-submit,#add-to-wishlist-button')].forEach(button => {
-                button.type = 'button'; // もともとはtype="submit"になっている(早いタイミングで押すと不正な遷移をしてしまう原因)→これを"button"に置換
-        });
+        }
         
-        insert_css(`
-            #wishlistButtonStack {
-                visibility: unset;
-            }
-        `);
-    };
-    
-    const init_observe = (() => {
-        let monitor_script;
+        #insert_hide_buttons_css_style() {
+            this.#remove_hide_buttons_css_style();
+            this.#hide_buttons_css_style = this.#insert_css(`
+                #wishlistButtonStack {
+                    visibility: hidden;
+                }
+            `);
+        }
         
-        const finish = event => {
-            document.removeEventListener('DOMContentLoaded', finish);
-            show_buttons();
-        };
-        
-        const observer = new MutationObserver(records => {
-            stop_observe();
-            if (monitor_script.dataset.eventset != 'true') {
-                start_observe();
+        #remove_hide_buttons_css_style() {
+            if (! this.#hide_buttons_css_style) {
                 return;
             }
-            finish();
-        });
+            this.#hide_buttons_css_style.remove();
+            this.#hide_buttons_css_style = null;
+        }
+    }
+
+    class Main {
+        #script_name = 'user_content_script';
+        #wishlist_controller = null;
+        #monitor_script = null;
+        #observer = null;
         
-        const start_observe = () => observer.observe(monitor_script, {
-            attributes: true,
-            childList: false,
-            subtree: false
-        });
-        
-        const stop_observe = () => observer.disconnect();
-        
-        return () => {
-            hide_buttons();
+        constructor(script_name = null) {
+            const self_object = this;
             
-            monitor_script = (() => {
+            if (script_name) {
+                this.#script_name = script_name;
+            }
+            script_name = this.#script_name;
+            
+            this.#wishlist_controller = new WishlistController(script_name).hide_buttons();
+            
+            this.#monitor_script = (() => {
                 // [備忘] addEventListener()関数の呼び出しを監視し、[リストに追加]ボタンにclickイベントが設定されるのを待つ処理をインラインスクリプトとして埋め込み
                 // ※clickイベント設定時には当該scriptのdata-eventset属性が"false"→"true"になる
-                const script_id = `${SCRIPT_NAME}-watch-script`;
+                //
+                // [TODO] 目的の要素に対してaddEventListener()以外の手段でイベントが設定されているケースには未対応
+                // ※最初はフェイルセーフとしてDOMContentLoadedイベント時にも完了とみなすようにしていたが、どうもDOMContentLoaded後にclickイベントが設定されるケースもある模様(Firefoxで確認)
+                // →とりあえずloadイベント発生までは待ってみるようにして様子見
+                const script_id = `${script_name}-watch-script`;
                 const script = document.createElement('script');
                 
                 script.dataset.eventset = false;
                 script.id = script_id;
                 script.textContent = `
-                    EventTarget.prototype._addEventListener = EventTarget.prototype.addEventListener;
-                    EventTarget.prototype.addEventListener = function (type, listener, options) {
-                        this._addEventListener(type, listener, options);
-                        if ((this.id == 'add-to-wishlist-button-submit') && (type == 'click')) {
+                    (() => {
+                        'use strict';
+                        EventTarget.prototype.original_addEventListener = EventTarget.prototype.addEventListener;
+                        const restore_method = event => {
+                            if (event !== undefined) {
+                                console.warn('[${script_name}] "load" event occurred before "click" handler was set.');
+                            }
+                            //document.removeEventListener('DOMContentLoaded', restore_method);
+                            document.removeEventListener('load', restore_method);
+                            EventTarget.prototype.addEventListener = EventTarget.prototype.original_addEventListener;
+                            delete EventTarget.prototype.original_addEventListener;
                             document.querySelector('#${script_id}').dataset.eventset = true;
-                            EventTarget.prototype.addEventListener = EventTarget.prototype._addEventListener;
-                        }
-                    };
+                        };
+                        EventTarget.prototype.addEventListener = function (type, listener, options) {
+                            this.original_addEventListener(type, listener, options);
+                            if ((this.id == 'add-to-wishlist-button-submit') && (type == 'click')) {
+                                restore_method();
+                            }
+                        };
+                        //document.addEventListener('DOMContentLoaded', restore_method);
+                        document.addEventListener('load', restore_method);
+                    })();
                 `;
                 document.documentElement.append(script);
                 return script;
             })();
             
-            document.addEventListener('DOMContentLoaded', finish); // [リストに追加]ボタンがない場合等のフェイルセーフ(ボタンが非表示のままとならないようにDOMContentLoadedのタイミングでは必ず表示させる)
-            start_observe();
-        };
-    })();
+            //this.finish = this.finish.bind(this);
+            // [備忘] 
+            // document.addEventListener('DOMContentLoaded', this.finish);
+            // のようにするイベントハンドラとしてメソッド(finish)を指定する場合には
+            // - あらかじめthisをbindしておかないと、Firefoxでイベントハンドラが呼ばれた際にエラーが発生してしまう
+            // - finishを#finish(private)のようにしてしまうとbindに失敗してしまう
+            
+            this.#observer = new MutationObserver(records => {
+                self_object.#stop_observe();
+                if (self_object.#monitor_script.dataset.eventset == 'true') {
+                    self_object.#finish();
+                    return;
+                }
+                self_object.#start_observe();
+            });
+            
+            this.#start_observe();
+        }
+        
+        #start_observe() {
+            this.#observer.observe(this.#monitor_script, {
+                attributes: true,
+                childList: false,
+                subtree: false
+            });
+        }
+        
+        #stop_observe() {
+            this.#observer.disconnect();
+        }
+        
+        #finish(event) {
+            this.#stop_observe();
+            this.#observer = null;
+            this.#wishlist_controller
+                .patch_buttons()
+                .show_buttons();
+            this.#monitor_script.remove();
+            this.#monitor_script = null;
+            this.#wishlist_controller = null;
+        }
+    }
     
-    init_observe();
+    new Main(SCRIPT_NAME);
 })();
