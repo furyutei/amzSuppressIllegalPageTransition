@@ -5,7 +5,15 @@
 - Copyright (c) 2025 風柳(furyu)  
 - 対象ブラウザ： Google Chrome、Firefox  
 
-[Amazon.co.jp](https://www.amazon.co.jp/)の商品ページで、準備完了前に[リストに追加]ボタンを押すと[不正なページ遷移](https://www.amazon.co.jp/gp/product/handle-buy-box)が発生してしまう不具合を抑制。  
+[Amazon.co.jp](https://www.amazon.co.jp/)の商品ページで、準備完了前に[リストに追加]ボタン  
+
+![リストに追加ボタン](https://furyutei.github.io/amzSuppressIllegalPageTransition/img/add_to_list.jpg "[リストに追加]ボタン")  
+
+を押すと、[不正なページ遷移](https://www.amazon.co.jp/gp/product/handle-buy-box)  
+
+![何かお探しですか？](https://furyutei.github.io/amzSuppressIllegalPageTransition/img/404_not_found.jpg "何かお探しですか？／入力したURLが当サイトのページと一致しません")  
+
+が発生してしまう不具合を抑制。  
 
 
 ■ インストール方法 
